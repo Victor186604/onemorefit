@@ -1,0 +1,553 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // directUrl é usado apenas em produção com Neon (migrations)
+  // Em desenvolvimento com PGlite, deixe DATABASE_URL vazio e não defina directUrl
+}
+
+// ─── Plataforma ────────────────────────────────────────────
+
+model PlatformAdmin {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@map("platform_admins")
+}
+
+// ─── Academia ──────────────────────────────────────────────
+
+model Academia {
+  id              String             @id @default(cuid())
+  slug            String             @unique
+  nome            String
+  logoUrl         String?
+  cnpj            String?
+  telefone        String?
+  email           String?
+  endereco        String?
+  cidade          String?
+  estado          String?
+  cep             String?
+  fuso            String             @default("America/Sao_Paulo")
+  situacao        AcademiaSituacao   @default(ATIVA)
+  assinatura      AssinaturaSituacao @default(TRIAL)
+  assinaturaAte   DateTime?
+  observacoes     String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  vinculos        UserAcademia[]
+  alunos          Aluno[]
+  planos          Plano[]
+  matriculas      Matricula[]
+  mensalidades    Mensalidade[]
+  movimentos      Movimento[]
+  contas          Conta[]
+  categorias      Categoria[]
+  formasPgto      FormaPagamento[]
+  presencas       Presenca[]
+  auditoria       AuditLog[]
+  convites        Convite[]
+  configuracoes   AcademiaConfig?
+  rateLimits      RateLimit[]
+
+  @@map("academias")
+}
+
+enum AcademiaSituacao {
+  ATIVA
+  SUSPENSA
+  ENCERRADA
+}
+
+enum AssinaturaSituacao {
+  TRIAL
+  ATIVA
+  INADIMPLENTE
+  CANCELADA
+}
+
+model AcademiaConfig {
+  id               String   @id @default(cuid())
+  academiaId       String   @unique
+  academia         Academia @relation(fields: [academiaId], references: [id])
+  reciboHeader     String?
+  reciboFooter     String?
+  diasVencimento   Int[]    @default([10])
+  gerarAoMatricular Boolean @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("academia_configs")
+}
+
+// ─── Usuários ──────────────────────────────────────────────
+
+model User {
+  id              String         @id @default(cuid())
+  nome            String
+  email           String         @unique
+  emailVerified   DateTime?
+  senhaHash       String?
+  avatar          String?
+  ativo           Boolean        @default(true)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  vinculos        UserAcademia[]
+  platformAdmin   PlatformAdmin?
+  sessoes         Session[]
+  tokens          VerificationToken[]
+  auditoria       AuditLog[]
+  presencasReg    Presenca[]     @relation("PresencaRegistradaPor")
+  movimentosReg   Movimento[]    @relation("MovimentoRegistradoPor")
+  recebimentosReg Recebimento[]  @relation("RecebimentoRegistradoPor")
+  alunos          Aluno[]
+
+  @@map("users")
+}
+
+model UserAcademia {
+  id          String    @id @default(cuid())
+  userId      String
+  academiaId  String
+  papel       PapelAcademia
+  ativo       Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id])
+  academia    Academia  @relation(fields: [academiaId], references: [id])
+
+  @@unique([userId, academiaId])
+  @@map("user_academias")
+}
+
+enum PapelAcademia {
+  ADMIN
+  RECEPCAO
+  FINANCEIRO
+  PROFESSOR
+  ALUNO
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  academiaId   String?
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  id         String    @id @default(cuid())
+  token      String    @unique
+  userId     String?
+  email      String
+  tipo       TokenTipo
+  expiresAt  DateTime
+  usadoEm    DateTime?
+  createdAt  DateTime  @default(now())
+  user       User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("verification_tokens")
+}
+
+enum TokenTipo {
+  RESET_SENHA
+  CONVITE
+  ATIVACAO_ALUNO
+}
+
+model Convite {
+  id          String    @id @default(cuid())
+  academiaId  String
+  email       String
+  papel       PapelAcademia
+  token       String    @unique
+  expiresAt   DateTime
+  aceitoEm    DateTime?
+  createdAt   DateTime  @default(now())
+  academia    Academia  @relation(fields: [academiaId], references: [id])
+
+  @@map("convites")
+}
+
+model RateLimit {
+  id         String   @id @default(cuid())
+  academiaId String?
+  chave      String
+  tentativas Int      @default(1)
+  resetEm    DateTime
+  academia   Academia? @relation(fields: [academiaId], references: [id])
+
+  @@unique([chave])
+  @@map("rate_limits")
+}
+
+// ─── Alunos ────────────────────────────────────────────────
+
+model Aluno {
+  id                 String          @id @default(cuid())
+  academiaId         String
+  nome               String
+  email              String?
+  telefone           String?
+  cpf                String?
+  dataNascimento     DateTime?
+  enderecoLogradouro String?
+  enderecoNumero     String?
+  enderecoCompl      String?
+  enderecoBairro     String?
+  enderecoCidade     String?
+  enderecoEstado     String?
+  enderecoCep        String?
+  contatoEmerg       String?
+  telefoneEmerg      String?
+  responsavel        String?
+  telefonResp        String?
+  observacoes        String?
+  situacao           AlunoSituacao   @default(ATIVO)
+  userId             String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  academia           Academia        @relation(fields: [academiaId], references: [id])
+  user               User?           @relation(fields: [userId], references: [id])
+  matriculas         Matricula[]
+  presencas          Presenca[]
+
+  @@unique([academiaId, cpf])
+  @@index([academiaId])
+  @@index([academiaId, situacao])
+  @@map("alunos")
+}
+
+enum AlunoSituacao {
+  ATIVO
+  INATIVO
+  BLOQUEADO
+}
+
+// ─── Planos ────────────────────────────────────────────────
+
+model Plano {
+  id                String         @id @default(cuid())
+  academiaId        String
+  nome              String
+  descricao         String?
+  modalidade        String?
+  tipoDuracao       TipoDuracao
+  duracaoMeses      Int?
+  valor             Decimal        @db.Decimal(10, 2)
+  taxaMatricula     Decimal?       @db.Decimal(10, 2)
+  freqCobranca      FreqCobranca   @default(MENSAL)
+  disponivelNovo    Boolean        @default(true)
+  ativo             Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  academia          Academia       @relation(fields: [academiaId], references: [id])
+  matriculas        Matricula[]
+
+  @@index([academiaId])
+  @@map("planos")
+}
+
+enum TipoDuracao {
+  MENSAL_RECORRENTE
+  CONTRATO_PRAZO
+}
+
+enum FreqCobranca {
+  MENSAL
+}
+
+// ─── Matrículas ────────────────────────────────────────────
+
+model Matricula {
+  id                String            @id @default(cuid())
+  academiaId        String
+  alunoId           String
+  planoId           String
+  planoNome         String
+  planoTipo         TipoDuracao
+  valorContratado   Decimal           @db.Decimal(10, 2)
+  taxaMatricula     Decimal?          @db.Decimal(10, 2)
+  diaVencimento     Int
+  desconto          Decimal?          @db.Decimal(10, 2)
+  formaPgtoId       String?
+  dataInicio        DateTime          @db.Date
+  dataTermino       DateTime?         @db.Date
+  situacao          MatriculaSituacao @default(ATIVA)
+  observacoes       String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  academia          Academia          @relation(fields: [academiaId], references: [id])
+  aluno             Aluno             @relation(fields: [alunoId], references: [id])
+  plano             Plano             @relation(fields: [planoId], references: [id])
+  formaPgto         FormaPagamento?   @relation(fields: [formaPgtoId], references: [id])
+  mensalidades      Mensalidade[]
+  historico         MatriculaHistorico[]
+
+  @@index([academiaId])
+  @@index([academiaId, alunoId])
+  @@index([academiaId, situacao])
+  @@map("matriculas")
+}
+
+enum MatriculaSituacao {
+  ATIVA
+  ENCERRADA
+  CANCELADA
+  SUSPENSA
+}
+
+model MatriculaHistorico {
+  id          String    @id @default(cuid())
+  matriculaId String
+  evento      String
+  descricao   String?
+  userId      String?
+  nomeUser    String?
+  createdAt   DateTime  @default(now())
+  matricula   Matricula @relation(fields: [matriculaId], references: [id])
+
+  @@map("matricula_historicos")
+}
+
+// ─── Mensalidades / Cobranças ──────────────────────────────
+
+model Mensalidade {
+  id             String            @id @default(cuid())
+  academiaId     String
+  matriculaId    String
+  tipo           MensalidadeTipo   @default(MENSALIDADE)
+  competencia    String            // "YYYY-MM"
+  vencimento     DateTime          @db.Date
+  valorOriginal  Decimal           @db.Decimal(10, 2)
+  desconto       Decimal           @db.Decimal(10, 2) @default(0)
+  acrescimo      Decimal           @db.Decimal(10, 2) @default(0)
+  valorRecebido  Decimal           @db.Decimal(10, 2) @default(0)
+  situacao       MensalidadeSituacao @default(EM_ABERTO)
+  canceladaEm   DateTime?
+  canceladaPor  String?
+  cancelMotivo  String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  academia       Academia          @relation(fields: [academiaId], references: [id])
+  matricula      Matricula         @relation(fields: [matriculaId], references: [id])
+  recebimentos   Recebimento[]
+
+  @@unique([matriculaId, tipo, competencia])
+  @@index([academiaId])
+  @@index([academiaId, situacao])
+  @@index([academiaId, vencimento])
+  @@index([academiaId, matriculaId])
+  @@map("mensalidades")
+}
+
+enum MensalidadeTipo {
+  MENSALIDADE
+  TAXA_MATRICULA
+  AVULSO
+}
+
+enum MensalidadeSituacao {
+  EM_ABERTO
+  PARCIAL
+  PAGA
+  CANCELADA
+}
+
+model Recebimento {
+  id             String    @id @default(cuid())
+  mensalidadeId  String
+  academiaId     String
+  valor          Decimal   @db.Decimal(10, 2)
+  formaPgtoId    String?
+  formaPgtoNome  String?
+  contaId        String?
+  dataPagamento  DateTime  @db.Date
+  observacoes    String?
+  estornado      Boolean   @default(false)
+  estornoId      String?   @unique
+  estornoDe      String?   @unique
+  estornoMotivo  String?
+  estornadoEm    DateTime?
+  estornadoPor   String?
+  registradoPor  String?
+  createdAt      DateTime  @default(now())
+
+  mensalidade    Mensalidade     @relation(fields: [mensalidadeId], references: [id])
+  formaPgto      FormaPagamento? @relation(fields: [formaPgtoId], references: [id])
+  conta          Conta?          @relation(fields: [contaId], references: [id])
+  registrador    User?           @relation("RecebimentoRegistradoPor", fields: [registradoPor], references: [id])
+
+  @@index([mensalidadeId])
+  @@index([academiaId])
+  @@map("recebimentos")
+}
+
+// ─── Financeiro ────────────────────────────────────────────
+
+model Conta {
+  id          String       @id @default(cuid())
+  academiaId  String
+  nome        String
+  tipo        ContaTipo
+  saldoInicial Decimal     @db.Decimal(10, 2) @default(0)
+  ativo       Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  academia    Academia     @relation(fields: [academiaId], references: [id])
+  movimentos  Movimento[]
+  recebimentos Recebimento[]
+
+  @@index([academiaId])
+  @@map("contas")
+}
+
+enum ContaTipo {
+  CAIXA
+  BANCO
+  CARTAO
+  OUTRO
+}
+
+model Categoria {
+  id          String          @id @default(cuid())
+  academiaId  String
+  nome        String
+  tipo        CategoriaTipo
+  ativo       Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+
+  academia    Academia        @relation(fields: [academiaId], references: [id])
+  movimentos  Movimento[]
+
+  @@index([academiaId])
+  @@map("categorias")
+}
+
+enum CategoriaTipo {
+  RECEITA
+  DESPESA
+}
+
+model FormaPagamento {
+  id          String       @id @default(cuid())
+  academiaId  String
+  nome        String
+  ativo       Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+
+  academia    Academia     @relation(fields: [academiaId], references: [id])
+  matriculas  Matricula[]
+  recebimentos Recebimento[]
+  movimentos  Movimento[]
+
+  @@index([academiaId])
+  @@map("formas_pagamento")
+}
+
+model Movimento {
+  id             String          @id @default(cuid())
+  academiaId     String
+  tipo           MovimentoTipo
+  descricao      String
+  valor          Decimal         @db.Decimal(10, 2)
+  data           DateTime        @db.Date
+  categoriaId    String?
+  contaId        String?
+  contaDestinoId String?
+  formaPgtoId    String?
+  referencia     String?
+  observacoes    String?
+  estornado      Boolean         @default(false)
+  estornoId      String?         @unique
+  estornoDe      String?         @unique
+  estornoMotivo  String?
+  registradoPor  String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  academia       Academia        @relation(fields: [academiaId], references: [id])
+  categoria      Categoria?      @relation(fields: [categoriaId], references: [id])
+  conta          Conta?          @relation(fields: [contaId], references: [id])
+  formaPgto      FormaPagamento? @relation(fields: [formaPgtoId], references: [id])
+  registrador    User?           @relation("MovimentoRegistradoPor", fields: [registradoPor], references: [id])
+
+  @@index([academiaId])
+  @@index([academiaId, tipo])
+  @@index([academiaId, data])
+  @@map("movimentos")
+}
+
+enum MovimentoTipo {
+  RECEITA
+  DESPESA
+  TRANSFERENCIA_SAIDA
+  TRANSFERENCIA_ENTRADA
+}
+
+// ─── Presenças ─────────────────────────────────────────────
+
+model Presenca {
+  id            String    @id @default(cuid())
+  academiaId    String
+  alunoId       String
+  dataHora      DateTime
+  anuladaEm     DateTime?
+  anuladaPor    String?
+  anulMotivo    String?
+  registradaPor String?
+  createdAt     DateTime  @default(now())
+
+  academia      Academia  @relation(fields: [academiaId], references: [id])
+  aluno         Aluno     @relation(fields: [alunoId], references: [id])
+  registrador   User?     @relation("PresencaRegistradaPor", fields: [registradaPor], references: [id])
+
+  @@unique([academiaId, alunoId, dataHora])
+  @@index([academiaId])
+  @@index([academiaId, alunoId])
+  @@index([academiaId, dataHora])
+  @@map("presencas")
+}
+
+// ─── Auditoria ─────────────────────────────────────────────
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  academiaId  String?
+  userId      String?
+  nomeUser    String?
+  acao        String
+  entidade    String
+  entidadeId  String?
+  descricao   String?
+  ip          String?
+  createdAt   DateTime @default(now())
+
+  academia    Academia? @relation(fields: [academiaId], references: [id])
+  user        User?     @relation(fields: [userId], references: [id])
+
+  @@index([academiaId])
+  @@index([academiaId, entidade])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

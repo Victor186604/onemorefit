@@ -1,0 +1,10 @@
+.env
+.env.local
+.env.*.local
+.next/
+node_modules/
+.pglite/
+dist/
+*.tsbuildinfo
+.vercel
+prisma/migrations/dev/
